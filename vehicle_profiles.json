@@ -381,7 +381,7 @@
           "parameters": [
             {
               "name": "SOC",
-              "expression": "[B4:B5]/655.35",
+              "expression": "[B8:B9]/655.35",
               "unit": "%",
               "class": "battery",
               "min": "0",
