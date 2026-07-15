@@ -191,6 +191,41 @@
             border-bottom: 2px solid var(--primary-light);
         }
 
+        .settings-summary {
+            margin: 0 0 1.5rem;
+            padding: 1rem;
+            border: 1px solid var(--gray-200);
+            border-left: 4px solid var(--primary-color);
+            border-radius: 6px;
+            background: var(--gray-100);
+            color: var(--gray-700);
+            font-size: 0.95rem;
+            font-weight: 400;
+        }
+
+        .field-label {
+            display: block;
+            color: var(--gray-700);
+            font-weight: 600;
+        }
+
+        .field-help {
+            display: block;
+            max-width: 30rem;
+            margin-top: 0.25rem;
+            color: var(--gray-600);
+            font-size: 0.85rem;
+            font-weight: 400;
+            line-height: 1.35;
+        }
+
+        .input-help {
+            margin-top: 0.35rem;
+            color: var(--gray-600);
+            font-size: 0.85rem;
+            font-weight: 400;
+        }
+
         .divider {
             margin: 1.5rem 0;
             border-bottom: 1px solid var(--gray-200);
@@ -562,19 +597,28 @@
 
         <div id="wifi_settings" class="tabcontent">
             <form id="configForm" name="configForm" action="/action_page" onchange="submit_enable();">
-                <div class="section-title">AP Config</div>
+                <div class="section-title">WiFi Access</div>
+                <div class="settings-summary">
+                    Use AP+Station to join your home WiFi. After saving, reconnect through the Station IP shown on the Status tab.
+                </div>
                 <table class="form-table">
                     <tr>
-                        <td>Mode:</td>
+                        <td>
+                            <span class="field-label">WiFi Mode</span>
+                            <span class="field-help">AP keeps WiCAN on its own setup network. AP+Station also connects to your home WiFi.</span>
+                        </td>
                         <td>
                             <select name="wifi_mode" id="wifi_mode">
-                                <option value="AP">AP</option>
-                                <option value="APStation">AP+Station</option>
+                                <option value="AP">Setup network only</option>
+                                <option value="APStation">Setup network + Home WiFi</option>
                             </select>
                         </td>
                     </tr>
                     <tr>
-                        <td>AP Channel:</td>
+                        <td>
+                            <span class="field-label">Setup Network Channel</span>
+                            <span class="field-help">Channel used by the WiCAN setup access point. Leave at 6 unless the setup network is unstable.</span>
+                        </td>
                         <td>
                             <select name="ap_ch_value" id="ap_ch_value">
                                 <option value="1">1</option>
@@ -595,17 +639,23 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>AP Password:</td>
+                        <td>
+                            <span class="field-label">Setup Network Password</span>
+                            <span class="field-help">Password for the WiCAN_xxxxxx access point. Use 8 to 63 characters.</span>
+                        </td>
                         <td>
                             <input type="text" id="ap_pass_value" name="ap_pass_value" value="Testpass" />
                         </td>
                     </tr>
                     <tr>
-                        <td>Auto-Disable AP:</td>
+                        <td>
+                            <span class="field-label">Hide Setup Network After Connect</span>
+                            <span class="field-help">Turns off the setup network after WiCAN gets a home WiFi address. Disable while testing.</span>
+                        </td>
                         <td>
                             <select name="ap_auto_disable" id="ap_auto_disable" onchange="submit_enable();">
-                                <option value="enable">Enable</option>
-                                <option value="disable">Disable</option>
+                                <option value="enable">Hide after connected</option>
+                                <option value="disable">Keep setup network on</option>
                             </select>
                         </td>
                     </tr>
@@ -613,26 +663,35 @@
 
                 <div class="divider"></div>
 
-                <div class="section-title">Station Config</div>
+                <div class="section-title">Home WiFi</div>
                 <table class="form-table">
                     <tr>
-                        <td>SSID:</td>
+                        <td>
+                            <span class="field-label">Network Name</span>
+                            <span class="field-help">Your home WiFi SSID. This field is enabled when WiFi Mode is set to AP+Station.</span>
+                        </td>
                         <td>
                             <input type="text" id="ssid_value" name="ssid_value" value="MeatPi" disabled />
                         </td>
                     </tr>
                     <tr>
-                        <td>Password:</td>
+                        <td>
+                            <span class="field-label">Network Password</span>
+                            <span class="field-help">Your home WiFi password. Use 8 to 63 characters.</span>
+                        </td>
                         <td>
                             <input type="text" id="pass_value" name="pass_value" value="TomatoSauce" disabled />
                         </td>
                     </tr>
                     <tr>
-                        <td>Security:</td>
+                        <td>
+                            <span class="field-label">Security</span>
+                            <span class="field-help">Use WPA2/WPA3 for most routers. Choose WPA3 only if your network requires it.</span>
+                        </td>
                         <td>
                             <select id="sta_security" name="sta_security" disabled>
-                                <option value="wpa3">WPA3</option>
-                                <option value="wpa2">WPA2</option>
+                                <option value="wpa2">WPA2/WPA3</option>
+                                <option value="wpa3">WPA3 only</option>
                             </select>
                         </td>
                     </tr>
@@ -643,7 +702,10 @@
                 <div class="section-title">CAN</div>
                 <table class="form-table">
                     <tr>
-                        <td>CAN Bitrate:</td>
+                        <td>
+                            <span class="field-label">CAN Bitrate</span>
+                            <span class="field-help">Vehicle CAN speed. 500K is common for OBD-II CAN vehicles.</span>
+                        </td>
                         <td>
                             <select name="can_datarate" id="can_datarate">
                                 <option value="5K">5K</option>
@@ -661,7 +723,10 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>CAN Mode:</td>
+                        <td>
+                            <span class="field-label">CAN Mode</span>
+                            <span class="field-help">Normal can transmit and receive. Silent only listens to traffic.</span>
+                        </td>
                         <td>
                             <select name="can_mode" id="can_mode">
                                 <option value="normal" selected="selected">Normal</option>
@@ -670,7 +735,10 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>Port Type:</td>
+                        <td>
+                            <span class="field-label">Network Port Type</span>
+                            <span class="field-help">TCP is best for most apps. UDP is useful for tools that expect datagrams.</span>
+                        </td>
                         <td>
                             <select name="port_type" id="port_type">
                                 <option value="tcp">TCP</option>
@@ -679,13 +747,19 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>TCP/UDP Port:</td>
+                        <td>
+                            <span class="field-label">Network Port</span>
+                            <span class="field-help">Port used by CAN clients on WiFi. SavvyCAN forces TCP port 23.</span>
+                        </td>
                         <td>
                             <input type="number" id="tcp_port_value" name="tcp_port_value" value="3333" min="1" max="65535" />
                         </td>
                     </tr>
                     <tr>
-                        <td>Protocol:</td>
+                        <td>
+                            <span class="field-label">Protocol</span>
+                            <span class="field-help">Choose the protocol expected by your app or integration.</span>
+                        </td>
                         <td>
                             <select name="protocol" id="protocol">
                                 <option value="realdash66">realdash66</option>
@@ -697,7 +771,10 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>MQTT:</td>
+                        <td>
+                            <span class="field-label">MQTT</span>
+                            <span class="field-help">Publishes CAN/status data to a broker for Home Assistant or other tools.</span>
+                        </td>
                         <td>
                             <select name="mqtt_en" id="mqtt_en">
                                 <option value="enable">Enable</option>
@@ -712,13 +789,19 @@
                 <div class="section-title">BLE</div>
                 <table class="form-table">
                     <tr>
-                        <td>Passkey:</td>
+                        <td>
+                            <span class="field-label">BLE Passkey</span>
+                            <span class="field-help">Six-digit pairing code. Must not start with 0.</span>
+                        </td>
                         <td>
                             <input type="number" id="ble_pass_value" name="ble_pass_value" value="000000" min="0" max="999999" />
                         </td>
                     </tr>
                     <tr>
-                        <td>BLE Status:</td>
+                        <td>
+                            <span class="field-label">BLE Status</span>
+                            <span class="field-help">BLE is disabled automatically in AP+Station mode to keep WiFi stable.</span>
+                        </td>
                         <td>
                             <select name="ble_status" id="ble_status">
                                 <option value="enable">Enable</option>
@@ -744,24 +827,39 @@
                     <div class="section-title">MQTT</div>
                     <table class="form-table">
                         <tr>
-                            <td><label for="mqtt_url"><b>MQTT URL:</b></label></td>
+                            <td>
+                                <label for="mqtt_url" class="field-label">Broker Address</label>
+                                <span class="field-help">Hostname or IP address of your MQTT broker. The firmware adds mqtt:// when saving.</span>
+                            </td>
                             <td><input type="text" id="mqtt_url" name="mqtt_url" value="127.0.0.1" /></td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_port"><b>MQTT Port:</b></label></td>
+                            <td>
+                                <label for="mqtt_port" class="field-label">Broker Port</label>
+                                <span class="field-help">Usually 1883 for local unencrypted MQTT.</span>
+                            </td>
                             <td><input type="number" id="mqtt_port" name="mqtt_port" value="1883" min="1" max="65535" />
                             </td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_user"><b>MQTT User:</b></label></td>
+                            <td>
+                                <label for="mqtt_user" class="field-label">Broker Username</label>
+                                <span class="field-help">MQTT username, if your broker requires one.</span>
+                            </td>
                             <td><input type="text" id="mqtt_user" name="mqtt_user" value="meatpi" /></td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_pass"><b>MQTT Pass:</b></label></td>
+                            <td>
+                                <label for="mqtt_pass" class="field-label">Broker Password</label>
+                                <span class="field-help">MQTT password, if your broker requires one.</span>
+                            </td>
                             <td><input type="text" id="mqtt_pass" name="mqtt_pass" value="meatpi" /></td>
                         </tr>
                         <tr>
-                            <td><label for="keep_alive"><b>Keep Alive:</b></label></td>
+                            <td>
+                                <label for="keep_alive" class="field-label">Keep Alive</label>
+                                <span class="field-help">How often WiCAN checks that the broker connection is still alive.</span>
+                            </td>
                             <td class="slider-container">
                                 <input type="range" 
                                        id="keep_alive" 
@@ -775,23 +873,35 @@
                             </td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_tx_topic"><b>TX Topic:</b></label></td>
+                            <td>
+                                <label for="mqtt_tx_topic" class="field-label">CAN TX Topic</label>
+                                <span class="field-help">Topic where WiCAN listens for CAN frames to transmit.</span>
+                            </td>
                             <td><input type="text" id="mqtt_tx_topic" name="mqtt_tx_topic" value="" /></td>
                             <td><input type="checkbox" id="mqtt_tx_en_checkbox" name="mqtt_tx_en_checkbox"
                                     onchange="txCheckBoxChanged()"></td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_rx_topic"><b>RX Topic:</b></label></td>
+                            <td>
+                                <label for="mqtt_rx_topic" class="field-label">CAN RX Topic</label>
+                                <span class="field-help">Topic where WiCAN publishes received CAN frames.</span>
+                            </td>
                             <td><input type="text" id="mqtt_rx_topic" name="mqtt_rx_topic" value="" /></td>
                             <td><input type="checkbox" id="mqtt_rx_en_checkbox" name="mqtt_rx_en_checkbox" 
                                     onchange="rxCheckBoxChanged()"></td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_status_topic"><b>Status Topic:</b></label></td>
+                            <td>
+                                <label for="mqtt_status_topic" class="field-label">Status Topic</label>
+                                <span class="field-help">Topic where WiCAN publishes connection and device status.</span>
+                            </td>
                             <td><input type="text" id="mqtt_status_topic" name="mqtt_status_topic" value="" /></td>
                         </tr>
                         <tr>
-                            <td><label for="mqtt_elm327_log"><b>MQTT elm327 log:</b></label></td>
+                            <td>
+                                <label for="mqtt_elm327_log" class="field-label">ELM327 Log</label>
+                                <span class="field-help">When enabled, MQTT only receives frames processed by the ELM327 protocol.</span>
+                            </td>
                             <td><select name="mqtt_elm327_log" style="width: 93px;" id="mqtt_elm327_log"
                                     onchange="alert_elm327()">
                                     <option value="enable">Enable</option>
@@ -2913,7 +3023,7 @@ function loadAutoTable(jsonData) {
 			document.getElementById("ap_ch_value").selectedIndex = ch.toString();
 			document.getElementById("ssid_value").value = obj.sta_ssid;
 			document.getElementById("pass_value").value = obj.sta_pass;
-            document.getElementById("sta_security").value = obj.sta_security || "wpa3";	
+            document.getElementById("sta_security").value = obj.sta_security || "wpa2";
             
             const webhookEnEl = document.getElementById("webhook_en");
             if (webhookEnEl) {

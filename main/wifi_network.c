@@ -46,10 +46,17 @@
  static esp_netif_t* ap_netif;
  static esp_netif_t* sta_netif;
  static TaskHandle_t xwifi_handle = NULL;
- static int s_retry_num = 0;
- static EventGroupHandle_t s_wifi_event_group = NULL;
- static const TickType_t connect_delay[] = {1000, 1000, 1000, 1000, 1000,1000};
- static int8_t ap_auto_disable = 0;
+static int s_retry_num = 0;
+static EventGroupHandle_t s_wifi_event_group = NULL;
+static const TickType_t connect_delay[] = {1000, 1000, 1000, 1000, 1000,1000};
+static int8_t ap_auto_disable = 0;
+
+static void wifi_copy_field(uint8_t *dest, size_t dest_size, const char *src)
+{
+    size_t len = strnlen(src, dest_size);
+    memset(dest, 0, dest_size);
+    memcpy(dest, src, len);
+}
  
  static void wifi_network_event_handler(void* arg, esp_event_base_t event_base,
                                  int32_t event_id, void* event_data)
@@ -347,13 +354,15 @@
      {
          if(sta_ssid == 0 && sta_pass == 0)
          {
-             strcpy( (char*)wifi_config_sta.sta.ssid, (char*)config_server_get_sta_ssid());
-             strcpy( (char*)wifi_config_sta.sta.password, (char*)config_server_get_sta_pass());
+             wifi_copy_field(wifi_config_sta.sta.ssid, sizeof(wifi_config_sta.sta.ssid),
+                             config_server_get_sta_ssid());
+             wifi_copy_field(wifi_config_sta.sta.password, sizeof(wifi_config_sta.sta.password),
+                             config_server_get_sta_pass());
          }
          else
          {
-             strcpy( (char*)wifi_config_sta.sta.ssid, (char*)sta_ssid);
-             strcpy( (char*)wifi_config_sta.sta.password, (char*)sta_pass);
+             wifi_copy_field(wifi_config_sta.sta.ssid, sizeof(wifi_config_sta.sta.ssid), sta_ssid);
+             wifi_copy_field(wifi_config_sta.sta.password, sizeof(wifi_config_sta.sta.password), sta_pass);
          }
          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
          ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config_sta) );
@@ -374,7 +383,8 @@
      sprintf((char *)wifi_config_ap.ap.ssid,"WiCAN_%02x%02x%02x%02x%02x%02x",
              derived_mac_addr[0], derived_mac_addr[1], derived_mac_addr[2],
              derived_mac_addr[3], derived_mac_addr[4], derived_mac_addr[5]);
-     strcpy( (char*)wifi_config_ap.ap.password, (char*)config_server_get_ap_pass());
+     wifi_copy_field(wifi_config_ap.ap.password, sizeof(wifi_config_ap.ap.password),
+                     config_server_get_ap_pass());
  
      esp_err_t hostname_err = esp_netif_set_hostname(sta_netif, (char *)wifi_config_ap.ap.ssid);
      if (hostname_err == ESP_OK)
@@ -409,4 +419,3 @@
      ESP_LOGI(WIFI_TAG, "wifi_init finished.");
  
  }
- 

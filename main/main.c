@@ -398,7 +398,6 @@ void app_main(void)
     xMsg_Tx_Queue = xQueueCreate(16, sizeof( xdev_buffer) );
     xmsg_ws_tx_queue = xQueueCreate(8, sizeof( xdev_buffer) );
 
-	esp_ota_mark_app_valid_cancel_rollback();
 //    xmsg_obd_rx_queue = xQueueCreate(100, sizeof( twai_message_t) );
 
     ESP_ERROR_CHECK(esp_read_mac(derived_mac_addr, ESP_MAC_WIFI_SOFTAP));
@@ -528,7 +527,11 @@ void app_main(void)
     	ble_init(&xmsg_ble_tx_queue, &xMsg_Rx_Queue, CONNECTED_LED_GPIO_NUM, pass, &ble_uid[0]);
     }
 
-
+    esp_err_t ota_valid_err = esp_ota_mark_app_valid_cancel_rollback();
+    if (ota_valid_err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed to mark app valid: %s", esp_err_to_name(ota_valid_err));
+    }
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_app_desc_t running_app_info;
