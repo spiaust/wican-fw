@@ -588,24 +588,29 @@ void app_main(void)
 		if(config_server_get_sleep_config())
 		{
 			float sleep_voltage = 0;
+			float wakeup_voltage = 0;
 
 			if(config_server_get_sleep_volt(&sleep_voltage) != -1)
 			{
-				sleep_mode_init(1, sleep_voltage);
+				if(config_server_get_wakeup_volt(&wakeup_voltage) == -1 || wakeup_voltage <= sleep_voltage)
+				{
+					wakeup_voltage = sleep_voltage + 0.4f;
+				}
+				sleep_mode_init(1, sleep_voltage, wakeup_voltage);
 			}
 			else
 			{
-				sleep_mode_init(0, 13.1f);
+				sleep_mode_init(0, 13.1f, 13.5f);
 			}
 		}
 		else
 		{
-			sleep_mode_init(0, 13.1f);
+			sleep_mode_init(0, 13.1f, 13.5f);
 		}
     }
     else
     {
-    	sleep_mode_init(0, 13.1f);
+        sleep_mode_init(0, 13.1f, 13.5f);
     }
 
     gpio_set_level(PWR_LED_GPIO_NUM, 1);

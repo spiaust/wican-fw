@@ -2313,7 +2313,30 @@ static void autopid_webhook_task(void *pvParameters)
         }
 
         // Only post in AutoPID protocol mode
-        if (config_server_protocol() == AUTO_PID && wifi_network_is_connected())
+        if (config_server_protocol() != AUTO_PID)
+        {
+            uint64_t now = (uint64_t)(esp_timer_get_time() / 1000000ULL);
+            if ((now - last_wifi_status_time) >= 10)
+            {
+                last_wifi_status_time = now;
+
+                ha_webhook_config_t webhook_cfg;
+                memset(&webhook_cfg, 0, sizeof(webhook_cfg));
+                if (ha_webhooks_get_config(&webhook_cfg) == ESP_OK && webhook_cfg.enabled && webhook_cfg.url[0] != '\0')
+                {
+                    ha_webhook_config_t upd = webhook_cfg;
+                    strlcpy(upd.status, "waiting_autopid", sizeof(upd.status));
+                    strlcpy(upd.last_error, "Protocol is not AutoPID - webhook waits for AutoPID mode", sizeof(upd.last_error));
+                    webhook_format_utc(upd.last_error_time);
+                    (void)ha_webhooks_update_cache(&upd);
+                }
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+
+        if (wifi_network_is_connected())
         {
             bool send_full_data = true;
             if (all_pids && all_pids->webhook_data_mode)
@@ -2535,6 +2558,14 @@ static void autopid_webhook_task(void *pvParameters)
                             free(url);
                         }
                         free(raw_json);
+                    }
+                    else
+                    {
+                        ha_webhook_config_t upd = webhook_cfg;
+                        strlcpy(upd.status, "waiting_data", sizeof(upd.status));
+                        strlcpy(upd.last_error, "AutoPID data not ready yet", sizeof(upd.last_error));
+                        webhook_format_utc(upd.last_error_time);
+                        (void)ha_webhooks_update_cache(&upd);
                     }
                 }
             }

@@ -203,6 +203,13 @@ esp_err_t ha_webhook_load_config(ha_webhook_config_t *cfg)
         ESP_LOGD(TAG, "Retry count: %d", cfg->retries);
     }
 
+    if (cfg->enabled && cfg->url[0] != '\0' &&
+        (cfg->status[0] == '\0' || strcmp(cfg->status, "disabled") == 0))
+    {
+        strlcpy(cfg->status, "configured", sizeof(cfg->status));
+        cfg->retries = 0;
+    }
+
     cJSON_Delete(root);
     unlock_file();
     ESP_LOGI(TAG, "Webhook configuration loaded successfully");

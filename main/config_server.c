@@ -1996,14 +1996,13 @@ static void config_server_load_cfg(char *cfg)
 	}
 	else
 	{
+		strcpy(device_config.sleep_time, key->valuestring);
 		uint32_t sleep_time = atoi(device_config.sleep_time);
 
-		if(sleep_time > 30 && sleep_time < 1)
+		if(sleep_time > 30 || sleep_time < 1)
 		{
 			strcpy(device_config.sleep_time, "2");
 		}
-
-		strcpy(device_config.sleep_time, key->valuestring);
 	}
 
 	ESP_LOGE(TAG, "device_config.sleep_time: %s", device_config.sleep_time);

@@ -76,6 +76,7 @@ static adc_channel_t voltage_adc_ch = ADC_CHANNEL_4;
 static bool calibrated = false;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
 static float sleep_voltage = 13.1f;
+static float wakeup_voltage = 13.5f;
 static uint8_t enable_sleep = 0;
 static QueueHandle_t voltage_queue = NULL;
 adc_oneshot_unit_handle_t adc_handle;
@@ -391,7 +392,7 @@ static void adc_task(void *pvParameters)
 				}
 				case SLEEP_DETECTED:
 				{
-					if(battery_voltage > sleep_voltage)
+					if(battery_voltage >= sleep_voltage)
 					{
 						ESP_LOGI(TAG, "high voltage: %f", battery_voltage);
 						sleep_state = RUN_STATE;
@@ -409,7 +410,7 @@ static void adc_task(void *pvParameters)
 				case SLEEP_STATE:
 				{
 					ESP_LOGI(TAG, "Go to sleep");
-					if(battery_voltage > sleep_voltage)
+					if(battery_voltage > wakeup_voltage)
 					{
 						wakeup_detect_time = esp_timer_get_time();
 						ESP_LOGI(TAG, "wake up, voltage: %f", battery_voltage);
@@ -464,7 +465,7 @@ static void adc_task(void *pvParameters)
 				}
 				case WAKEUP_STATE:
 				{
-					if(battery_voltage > sleep_voltage)
+					if(battery_voltage > wakeup_voltage)
 					{
 						if((esp_timer_get_time() - wakeup_detect_time) > WAKEUP_TIME_DELAY)
 						{
@@ -473,7 +474,7 @@ static void adc_task(void *pvParameters)
 
 						}
 					}
-					else if(battery_voltage < sleep_voltage)
+					else if(battery_voltage < wakeup_voltage)
 					{
                         dev_status_clear_bits(DEV_AWAKE_BIT);
                         dev_status_set_bits(DEV_SLEEP_BIT);
@@ -515,11 +516,12 @@ int8_t sleep_mode_get_voltage(float *val)
 	return -1;
 }
 
-int8_t sleep_mode_init(uint8_t enable, float sleep_volt)
+int8_t sleep_mode_init(uint8_t enable, float sleep_volt, float wakeup_volt)
 {
 	enable_sleep = enable;
 	sleep_voltage = sleep_volt;
-	ESP_LOGW(TAG, "sleep_volt: %2.2f", sleep_volt);
+	wakeup_voltage = wakeup_volt;
+	ESP_LOGW(TAG, "sleep_volt: %2.2f, wakeup_volt: %2.2f", sleep_volt, wakeup_volt);
 	s_mqtt_event_group = xEventGroupCreate();
 	voltage_queue = xQueueCreate(1, sizeof( float) );
 	xTaskCreate(adc_task, "adc_task", 4096, (void*)AF_INET, 5, NULL);

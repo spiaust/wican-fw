@@ -154,8 +154,26 @@ static esp_err_t webhook_post_handler(httpd_req_t *req)
     if (cJSON_IsNumber(interval))
         cfg.interval = interval->valueint;
 
+    if (cfg.enabled)
+    {
+        strlcpy(cfg.status, "configured", sizeof(cfg.status));
+        cfg.retries = 0;
+        cfg.last_error[0] = '\0';
+        cfg.last_error_time[0] = '\0';
+    }
+    else
+    {
+        strlcpy(cfg.status, "disabled", sizeof(cfg.status));
+    }
+
     // Check if meaningful fields actually changed
-    bool changed = (strcmp(old_cfg.url, cfg.url) != 0) || (old_cfg.enabled != cfg.enabled) || (old_cfg.interval != cfg.interval);
+    bool changed = (strcmp(old_cfg.url, cfg.url) != 0) ||
+                   (old_cfg.enabled != cfg.enabled) ||
+                   (old_cfg.interval != cfg.interval) ||
+                   (strcmp(old_cfg.status, cfg.status) != 0) ||
+                   (old_cfg.retries != cfg.retries) ||
+                   (strcmp(old_cfg.last_error_time, cfg.last_error_time) != 0) ||
+                   (strcmp(old_cfg.last_error, cfg.last_error) != 0);
 
     ESP_LOGI(TAG, "Webhook %s, enabled: %s", first_set ? "created" : (changed ? "updated" : "unchanged"),
              cfg.enabled ? "yes" : "no");
