@@ -63,7 +63,11 @@
 
 #define ADC_UNIT          ADC_UNIT_1
 #define ADC_CONV_MODE     ADC_CONV_SINGLE_UNIT_1
+#if HARDWARE_VER == WICAN_PRO
+#define ADC_ATTEN         ADC_ATTEN_DB_6
+#else
 #define ADC_ATTEN         ADC_ATTEN_DB_12  // 0-3.3V
+#endif
 #define ADC_BIT_WIDTH     SOC_ADC_DIGI_MAX_BITWIDTH
 #define ADC_READ_LEN      256
 
@@ -72,7 +76,11 @@
 #define MQTT_CONNECTED_BIT 			BIT0
 #define PUB_SUCCESS_BIT     		BIT1
 
+#if HARDWARE_VER == WICAN_PRO
+static adc_channel_t voltage_adc_ch = ADC_CHANNEL_3;
+#else
 static adc_channel_t voltage_adc_ch = ADC_CHANNEL_4;
+#endif
 static bool calibrated = false;
 static EventGroupHandle_t s_mqtt_event_group = NULL;
 static float sleep_voltage = 13.1f;
@@ -81,6 +89,12 @@ static uint8_t enable_sleep = 0;
 static QueueHandle_t voltage_queue = NULL;
 adc_oneshot_unit_handle_t adc_handle;
 static adc_cali_handle_t adc1_cali_chan0_handle = NULL;
+static sleep_mode_status_t sleep_mode_status = {
+    .voltage = -1.0f,
+    .sleep_voltage = 13.1f,
+    .wakeup_voltage = 13.5f,
+    .state_name = "Starting",
+};
 
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
@@ -305,7 +319,12 @@ esp_err_t read_ss_adc_voltage(float *voltage_out)
         
     	if(project_hardware_rev == WICAN_V300)
     	{
+#if HARDWARE_VER == WICAN_PRO
+			volt_rounded = (avg_voltage * 11.0f) / 1000.0f;
+			volt_rounded += 0.1f;
+#else
     		volt_rounded = (avg_voltage*116)/(16*1000.0f);
+#endif
     	}
     	else if(project_hardware_rev == WICAN_USB_V100)
     	{
@@ -314,6 +333,11 @@ esp_err_t read_ss_adc_voltage(float *voltage_out)
 
         volt_rounded = roundf(volt_rounded * 10.0f) / 10.0f;
         *voltage_out = volt_rounded;
+        sleep_mode_status.voltage = *voltage_out;
+        sleep_mode_status.avg_raw = avg_raw;
+        sleep_mode_status.min_raw = min_raw;
+        sleep_mode_status.max_raw = max_raw;
+        sleep_mode_status.avg_mv = avg_voltage;
         
         ESP_LOGI(TAG, "Summary: Raw=%d (min=%lu, max=%lu, avg of %lu), Voltage=%.2f V [%s]", 
                  avg_raw, min_raw, max_raw, valid_samples, *voltage_out,
@@ -329,6 +353,23 @@ esp_err_t read_ss_adc_voltage(float *voltage_out)
 #define	SLEEP_DETECTED		1
 #define SLEEP_STATE			2
 #define WAKEUP_STATE		3
+
+static const char *sleep_state_name(uint8_t state)
+{
+    switch (state)
+    {
+        case RUN_STATE:
+            return "Awake";
+        case SLEEP_DETECTED:
+            return "Low voltage timer";
+        case SLEEP_STATE:
+            return "Sleeping";
+        case WAKEUP_STATE:
+            return "Wake pending";
+        default:
+            return "Unknown";
+    }
+}
 
 static void adc_task(void *pvParameters)
 {
@@ -355,6 +396,7 @@ static void adc_task(void *pvParameters)
 	{
 		sleep_time = 3;
 	}
+	sleep_mode_status.sleep_time_seconds = (uint32_t)(sleep_time * 60);
 	sleep_time *= (60*1000000); //convert to microseconds
 
     while(1)
@@ -369,13 +411,22 @@ static void adc_task(void *pvParameters)
 			continue;
 		}
     	
+#if HARDWARE_VER != WICAN_PRO
     	battery_voltage += 0.2;
+#endif
     	if(project_hardware_rev == WICAN_V210)
     	{
     		battery_voltage = -1;
     	}
 
     	xQueueOverwrite( voltage_queue, &battery_voltage );
+        sleep_mode_status.voltage = battery_voltage;
+        sleep_mode_status.sleep_enabled = enable_sleep;
+        sleep_mode_status.sleep_voltage = sleep_voltage;
+        sleep_mode_status.wakeup_voltage = wakeup_voltage;
+        sleep_mode_status.state = sleep_state;
+        sleep_mode_status.state_name = sleep_state_name(sleep_state);
+        sleep_mode_status.sleep_remaining_seconds = 0;
     	if(enable_sleep == 1)
     	{
 			switch(sleep_state)
@@ -397,9 +448,18 @@ static void adc_task(void *pvParameters)
 						ESP_LOGI(TAG, "high voltage: %f", battery_voltage);
 						sleep_state = RUN_STATE;
 					}
+                    else
+                    {
+                        int64_t elapsed = esp_timer_get_time() - sleep_detect_time;
+                        if (elapsed < (int64_t)sleep_time)
+                        {
+                            sleep_mode_status.sleep_remaining_seconds = (uint32_t)((sleep_time - elapsed + 999999) / 1000000);
+                        }
+                    }
 
 					if((esp_timer_get_time() - sleep_detect_time) > sleep_time)
 					{
+                        dev_status_set_sleep();
 						sleep_state = SLEEP_STATE;
 	//    	    		wifi_network_deinit();
 	//    	    		ble_disable();
@@ -483,11 +543,14 @@ static void adc_task(void *pvParameters)
 					break;
 				}
 			}
+            sleep_mode_status.state = sleep_state;
+            sleep_mode_status.state_name = sleep_state_name(sleep_state);
 
 	//    	ESP_LOGI(TAG, "value: %u",adc_val);
 			if(sleep_state == SLEEP_STATE)
 			{
 				ESP_LOGW(TAG, "sleeping");
+                dev_status_set_sleep();
 				can_disable();
 				wifi_network_deinit();
 				ble_disable();
@@ -516,11 +579,27 @@ int8_t sleep_mode_get_voltage(float *val)
 	return -1;
 }
 
+int8_t sleep_mode_get_status(sleep_mode_status_t *status)
+{
+    if (status == NULL)
+    {
+        return -1;
+    }
+
+    *status = sleep_mode_status;
+    return 1;
+}
+
 int8_t sleep_mode_init(uint8_t enable, float sleep_volt, float wakeup_volt)
 {
 	enable_sleep = enable;
 	sleep_voltage = sleep_volt;
 	wakeup_voltage = wakeup_volt;
+    sleep_mode_status.sleep_enabled = enable;
+    sleep_mode_status.sleep_voltage = sleep_volt;
+    sleep_mode_status.wakeup_voltage = wakeup_volt;
+    sleep_mode_status.state = RUN_STATE;
+    sleep_mode_status.state_name = sleep_state_name(RUN_STATE);
 	ESP_LOGW(TAG, "sleep_volt: %2.2f, wakeup_volt: %2.2f", sleep_volt, wakeup_volt);
 	s_mqtt_event_group = xEventGroupCreate();
 	voltage_queue = xQueueCreate(1, sizeof( float) );

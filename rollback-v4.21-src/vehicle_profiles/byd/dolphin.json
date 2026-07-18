@@ -1,0 +1,13 @@
+{
+  "car_model": "BYD: Dolphin/Shark",
+  "init": "ATST96;ATSP6;",
+  "pids": [
+    {
+      "pid": "2200051",
+      "pid_init": "ATSH7E7;",
+      "parameters": {
+        "SOC": "B4"
+      }
+    }
+  ]
+}

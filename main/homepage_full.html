@@ -588,6 +588,24 @@
                     </td>
                 </tr>
                 <tr>
+                    <td>Power State:</td>
+                    <td>
+                        <div id="power_state">Awake&nbsp;</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Sleep Countdown:</td>
+                    <td>
+                        <div id="sleep_countdown">N/A&nbsp;</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Battery ADC:</td>
+                    <td>
+                        <div id="battery_adc">N/A&nbsp;</div>
+                    </td>
+                </tr>
+                <tr>
                     <td><input id="check_status_button" name="check_status_button" type="button" onclick="checkStatus()"
                             value="Check status" /></td>
                     <td>&nbsp;</td>
@@ -963,17 +981,23 @@
                 <tr>
                     <td>WebHook URL:</td>
                     <td>
-                        <input type="text" id="webhook_url" name="webhook_url" readonly style="background-color:#f5f5f5; cursor:not-allowed;">
+                        <input type="text" id="webhook_url" name="webhook_url" placeholder="http://homeassistant.local:8123/api/webhook/...">
                     </td>
                 </tr>
                 <tr>
                     <td>WebHook Interval (s):</td>
                     <td>
-                        <input type="text" id="webhook_interval" name="webhook_interval" readonly style="background-color:#f5f5f5; cursor:not-allowed;">
+                        <input type="number" id="webhook_interval" name="webhook_interval" min="5" max="3600" value="15">
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="2" style="font-size:0.7rem; color:#555; margin-top:0.5rem;">WebHook configuration is set in the Home Assistant integration.</td>
+                    <td></td>
+                    <td>
+                        <div class="button-group" style="margin-top:0;">
+                            <button type="button" onclick="saveWebhookConfig();">Save WebHook</button>
+                            <button type="button" onclick="testWebhookConfig();">Test WebHook</button>
+                        </div>
+                    </td>
                 </tr>
                 <tr>
                     <td>WebHook Data Mode:</td>
@@ -2518,6 +2542,17 @@ function loadAutoTable(jsonData) {
 			document.getElementById("git_version").innerHTML = obj.git_version;
 			document.getElementById("protocol").value = obj.protocol;
 			document.getElementById("batt_voltage").innerHTML = obj.batt_voltage;
+			document.getElementById("power_state").innerHTML = obj.power_state || "Awake";
+            if (obj.sleep_remaining_seconds && obj.sleep_remaining_seconds > 0) {
+                document.getElementById("sleep_countdown").innerHTML = obj.sleep_remaining_seconds + "s remaining";
+            } else if (obj.sleep_enabled) {
+                document.getElementById("sleep_countdown").innerHTML = "Ready";
+            } else {
+                document.getElementById("sleep_countdown").innerHTML = "Disabled";
+            }
+            if (obj.battery_adc_raw !== undefined) {
+                document.getElementById("battery_adc").innerHTML = "raw " + obj.battery_adc_raw + " / " + obj.battery_adc_mv + "mV";
+            }
 			if(document.getElementById("batt_alert").value == "enable") {
 				document.getElementById("batt_alert_div").style.display = "block";
 			} else if(document.getElementById("batt_alert").value == "disable") {
@@ -2559,12 +2594,8 @@ function loadAutoTable(jsonData) {
                 const errorRowEl = document.getElementById("webhook_error_row");
                 const detailsBtnEl = document.getElementById("webhook_error_details_btn");
 
-                if (urlField) {
-                    urlField.value = config.enabled && config.url ? config.url : "Not configured";
-                }
-                if (intervalField) {
-                    intervalField.value = config.enabled && config.interval ? config.interval.toString() : "Not configured";
-                }
+                if (urlField) urlField.value = config.url || "";
+                if (intervalField) intervalField.value = config.interval ? config.interval.toString() : "15";
 
                 const successCount = Number(config.success_count || 0);
                 const failCount = Number(config.fail_count || 0);
@@ -2612,8 +2643,8 @@ function loadAutoTable(jsonData) {
                 console.log('Webhook config not available:', error);
                 const urlField = document.getElementById("webhook_url");
                 const intervalField = document.getElementById("webhook_interval");
-                if (urlField) urlField.value = "Not configured";
-                if (intervalField) intervalField.value = "Not configured";
+                if (urlField) urlField.value = "";
+                if (intervalField) intervalField.value = "15";
 
                 const okEl = document.getElementById("webhook_stat_success");
                 const failEl = document.getElementById("webhook_stat_fail");
@@ -2649,6 +2680,63 @@ function loadAutoTable(jsonData) {
         } else {
             detailsEl.style.display = 'none';
         }
+    }
+
+    function saveWebhookConfig() {
+        const urlField = document.getElementById("webhook_url");
+        const intervalField = document.getElementById("webhook_interval");
+        const enabledField = document.getElementById("webhook_en");
+        const url = (urlField && urlField.value ? urlField.value : "").trim();
+        const interval = parseInt(intervalField && intervalField.value ? intervalField.value : "15", 10);
+        const enabled = !enabledField || enabledField.value === "enable";
+
+        if (!url || !/^https?:\/\//i.test(url)) {
+            showNotification("Enter a webhook URL starting with http://", "red");
+            return;
+        }
+        if (!interval || interval < 5 || interval > 3600) {
+            showNotification("Webhook interval must be between 5 and 3600 seconds", "red");
+            return;
+        }
+
+        fetch('/api/webhook', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({url, enabled, interval})
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('save failed');
+            return response.json();
+        })
+        .then(() => {
+            showNotification("Webhook saved", "green");
+            loadWebhookConfig();
+        })
+        .catch(() => showNotification("Failed to save webhook", "red"));
+    }
+
+    function testWebhookConfig() {
+        saveWebhookConfig();
+        setTimeout(() => {
+            fetch('/api/webhook/test', {method: 'POST'})
+            .then(response => {
+                if (!response.ok) throw new Error('test failed');
+                return response.json();
+            })
+            .then(result => {
+                if (result.ok) {
+                    showNotification("Webhook test sent", "green");
+                } else {
+                    const msg = result.last_error ? result.last_error : "Webhook test failed";
+                    showNotification(msg, "red");
+                }
+                loadWebhookConfig();
+            })
+            .catch(() => {
+                showNotification("Webhook test failed", "red");
+                loadWebhookConfig();
+            });
+        }, 700);
     }
 	function loadCANFLT() {
 		const xhttp = new XMLHttpRequest();

@@ -862,6 +862,28 @@ char *config_server_get_status_json(bool remove_sensitive_info)
 	cJSON_AddStringToObject(root, "git_version", GIT_SHA);
 	cJSON_AddStringToObject(root, "protocol", device_config.protocol);
 
+	sleep_mode_status_t sleep_status = {0};
+	if (sleep_mode_get_status(&sleep_status) == 1)
+	{
+		cJSON_AddStringToObject(root, "power_state", sleep_status.state_name ? sleep_status.state_name : "Unknown");
+		cJSON_AddNumberToObject(root, "sleep_state", sleep_status.state);
+		cJSON_AddNumberToObject(root, "sleep_remaining_seconds", sleep_status.sleep_remaining_seconds);
+		cJSON_AddNumberToObject(root, "sleep_time_seconds", sleep_status.sleep_time_seconds);
+		cJSON_AddNumberToObject(root, "sleep_threshold_voltage", sleep_status.sleep_voltage);
+		cJSON_AddNumberToObject(root, "wakeup_threshold_voltage", sleep_status.wakeup_voltage);
+		cJSON_AddNumberToObject(root, "battery_adc_raw", sleep_status.avg_raw);
+		cJSON_AddNumberToObject(root, "battery_adc_min_raw", sleep_status.min_raw);
+		cJSON_AddNumberToObject(root, "battery_adc_max_raw", sleep_status.max_raw);
+		cJSON_AddNumberToObject(root, "battery_adc_mv", sleep_status.avg_mv);
+		cJSON_AddBoolToObject(root, "sleep_enabled", sleep_status.sleep_enabled != 0);
+	}
+	else
+	{
+		cJSON_AddStringToObject(root, "power_state", dev_status_is_sleeping() ? "Sleeping" : "Awake");
+	}
+	cJSON_AddBoolToObject(root, "device_awake", dev_status_is_awake());
+	cJSON_AddBoolToObject(root, "device_sleeping", dev_status_is_sleeping());
+
 	cJSON_AddStringToObject(root, "sleep_status", device_config.sleep_status);
 	cJSON_AddStringToObject(root, "sleep_volt", device_config.sleep_volt);
 	cJSON_AddStringToObject(root, "sleep_time", device_config.sleep_time);

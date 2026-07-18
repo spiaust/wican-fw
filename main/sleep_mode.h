@@ -22,7 +22,25 @@
 #ifndef SLEEP_MODE_h
 #define SLEEP_MODE_h
 
+#include <stdint.h>
+
+typedef struct {
+    float voltage;
+    float sleep_voltage;
+    float wakeup_voltage;
+    uint32_t sleep_time_seconds;
+    uint32_t sleep_remaining_seconds;
+    int avg_raw;
+    int min_raw;
+    int max_raw;
+    int avg_mv;
+    uint8_t sleep_enabled;
+    uint8_t state;
+    const char *state_name;
+} sleep_mode_status_t;
+
 int8_t sleep_mode_init(uint8_t enable, float sleep_volt, float wakeup_volt);
 int8_t sleep_mode_get_voltage(float *val);
+int8_t sleep_mode_get_status(sleep_mode_status_t *status);
 
 #endif

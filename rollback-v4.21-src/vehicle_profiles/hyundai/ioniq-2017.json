@@ -1,0 +1,29 @@
+{
+  "car_model": "Hyundai: Ioniq2017",
+  "init": "ATSP6;ATSH7E4;ATST96;",
+  "pids": [
+    {
+      "pid": "21057",
+      "parameters": {
+        "SOC_D": "B39/2",
+        "SOH": "[B33:B34]/10"
+      }
+    },
+    {
+      "pid": "2101",
+      "parameters": {
+        "SOC": "B09/2",
+        "CHARGER_CONNECTED": "B14:5",
+        "CHARGING": "B14:7",
+        "CHARGING_DC": "B14:6"
+      }
+    },
+    {
+      "pid": "22B0025",
+      "pid_init": "ATSH7C6;ATFCSH7C6",
+      "parameters": {
+        "ODOMETER": "[B17:B18]"
+      }
+    }
+  ]
+}

@@ -230,6 +230,105 @@ static cJSON *autopid_build_config_object(void)
     return cfg;
 }
 
+static const char *autopid_power_state(void)
+{
+    sleep_mode_status_t sleep_status = {0};
+    if (sleep_mode_get_status(&sleep_status) == 1 && sleep_status.state_name)
+        return sleep_status.state_name;
+
+    return dev_status_is_sleeping() ? "Sleeping" : "Awake";
+}
+
+static bool autopid_is_sleeping_state(void)
+{
+    sleep_mode_status_t sleep_status = {0};
+    if (sleep_mode_get_status(&sleep_status) == 1)
+        return sleep_status.state == 2;
+
+    return dev_status_is_sleeping();
+}
+
+static bool autopid_is_low_voltage_timer_state(void)
+{
+    sleep_mode_status_t sleep_status = {0};
+    return sleep_mode_get_status(&sleep_status) == 1 && sleep_status.state == 1;
+}
+
+static uint32_t autopid_sleep_countdown_seconds(void)
+{
+    sleep_mode_status_t sleep_status = {0};
+    if (sleep_mode_get_status(&sleep_status) == 1)
+        return sleep_status.sleep_remaining_seconds;
+
+    return 0;
+}
+
+static bool autopid_is_car_off(void)
+{
+    return !autopid_get_ecu_status() || autopid_is_low_voltage_timer_state() || autopid_is_sleeping_state();
+}
+
+static void autopid_add_virtual_ha_config(cJSON *root)
+{
+    if (!root)
+        return;
+
+    cJSON *item = cJSON_CreateObject();
+    if (item)
+    {
+        cJSON_AddStringToObject(item, "class", "none");
+        cJSON_AddStringToObject(item, "unit", "none");
+        cJSON_AddItemToObject(root, "WICAN_POWER_STATE", item);
+    }
+
+    item = cJSON_CreateObject();
+    if (item)
+    {
+        cJSON_AddStringToObject(item, "class", "none");
+        cJSON_AddStringToObject(item, "unit", "none");
+        cJSON_AddStringToObject(item, "sensor_type", "binary_sensor");
+        cJSON_AddItemToObject(root, "WICAN_CAR_OFF", item);
+    }
+
+    item = cJSON_CreateObject();
+    if (item)
+    {
+        cJSON_AddStringToObject(item, "class", "none");
+        cJSON_AddStringToObject(item, "unit", "none");
+        cJSON_AddStringToObject(item, "sensor_type", "binary_sensor");
+        cJSON_AddItemToObject(root, "WICAN_SLEEPING", item);
+    }
+
+    item = cJSON_CreateObject();
+    if (item)
+    {
+        cJSON_AddStringToObject(item, "class", "none");
+        cJSON_AddStringToObject(item, "unit", "none");
+        cJSON_AddStringToObject(item, "sensor_type", "binary_sensor");
+        cJSON_AddItemToObject(root, "WICAN_LOW_VOLTAGE_TIMER", item);
+    }
+
+    item = cJSON_CreateObject();
+    if (item)
+    {
+        cJSON_AddStringToObject(item, "class", "duration");
+        cJSON_AddStringToObject(item, "unit", "s");
+        cJSON_AddItemToObject(root, "WICAN_SLEEP_COUNTDOWN", item);
+    }
+}
+
+static void autopid_add_virtual_ha_data(cJSON *root)
+{
+    if (!root)
+        return;
+
+    cJSON_AddStringToObject(root, "WICAN_POWER_STATE", autopid_power_state());
+    cJSON_AddStringToObject(root, "WICAN_CAR_OFF", autopid_is_car_off() ? "on" : "off");
+    cJSON_AddStringToObject(root, "WICAN_SLEEPING", autopid_is_sleeping_state() ? "on" : "off");
+    cJSON_AddStringToObject(root, "WICAN_LOW_VOLTAGE_TIMER", autopid_is_low_voltage_timer_state() ? "on" : "off");
+    cJSON_AddNumberToObject(root, "WICAN_SLEEP_COUNTDOWN", autopid_sleep_countdown_seconds());
+}
+
 typedef struct
 {
     char snippet[96];
@@ -925,7 +1024,7 @@ void autopid_request_data(void)
 
 char *autopid_data_read(void)
 {
-    static char *json_str = NULL;
+    char *json_str = NULL;
     
     if (!autopid_values || !autopid_values_mutex) {
         ESP_LOGE(TAG, "Invalid autopid_values or mutex");
@@ -937,8 +1036,17 @@ char *autopid_data_read(void)
     if (xEventGroupGetBits(xautopid_event_group) & AUTOPID_POLLING_DISABLED_BIT) {
         // Set the request bit to signal autopid task
         xEventGroupSetBits(xautopid_event_group, AUTOPID_REQUEST_BIT);
-        
+
+        uint64_t request_start = (uint64_t)(esp_timer_get_time() / 1000ULL);
         while (xEventGroupGetBits(xautopid_event_group) & AUTOPID_REQUEST_BIT) {
+            uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000ULL);
+            if ((now_ms - request_start) > 3000)
+            {
+                ESP_LOGW(TAG, "AutoPID request timed out; returning cached values");
+                DEBUG_LOGW(TAG, "AutoPID request timed out; returning cached values");
+                xEventGroupClearBits(xautopid_event_group, AUTOPID_REQUEST_BIT);
+                break;
+            }
             vTaskDelay(pdMS_TO_TICKS(100)); // Small delay to prevent busy waiting
         }
     }
@@ -956,6 +1064,7 @@ char *autopid_data_read(void)
                     }
                 }
             }
+            autopid_add_virtual_ha_data(root);
             limitJsonDecimalPrecision(root);
             json_str = cJSON_PrintUnformatted(root);
             cJSON_Delete(root);
@@ -1086,10 +1195,13 @@ char* autopid_get_config(void)
             {
                 cJSON_AddStringToObject(parameter_details, "unit", param->unit);
             }
+            cJSON_AddStringToObject(parameter_details, "sensor_type",
+                                    param->sensor_type == BINARY_SENSOR ? "binary_sensor" : "sensor");
             
             cJSON_AddItemToObject(parameters_object, param->name, parameter_details);
         }
     }
+    autopid_add_virtual_ha_config(parameters_object);
 
     // Convert to string and send response
     response_str = cJSON_PrintUnformatted(parameters_object);
@@ -2376,6 +2488,10 @@ static void autopid_webhook_task(void *pvParameters)
                     last_post_time = now;
 
                     char *raw_json = autopid_data_read();
+                    if (!raw_json)
+                    {
+                        raw_json = strdup_heap("{}");
+                    }
                     if (raw_json)
                     {
                         char *url = strdup_heap(webhook_cfg.url);
@@ -2403,9 +2519,13 @@ static void autopid_webhook_task(void *pvParameters)
                             cJSON *auto_curr = cJSON_Parse(raw_json);
                             if (!auto_curr)
                                 auto_curr = cJSON_CreateObject();
+                            bool autopid_has_values = (auto_curr && cJSON_GetArraySize(auto_curr) > 0);
 
                             if (root_obj && cfg_curr && sts_curr && auto_curr)
                             {
+                                cJSON_DeleteItemFromObjectCaseSensitive(sts_curr, "autopid_data_state");
+                                cJSON_AddStringToObject(sts_curr, "autopid_data_state", autopid_has_values ? "ready" : "waiting_data");
+
                                 // CONFIG
                                 cJSON *cfg_payload = NULL;
                                 if (send_full_data)
@@ -2559,14 +2679,6 @@ static void autopid_webhook_task(void *pvParameters)
                         }
                         free(raw_json);
                     }
-                    else
-                    {
-                        ha_webhook_config_t upd = webhook_cfg;
-                        strlcpy(upd.status, "waiting_data", sizeof(upd.status));
-                        strlcpy(upd.last_error, "AutoPID data not ready yet", sizeof(upd.last_error));
-                        webhook_format_utc(upd.last_error_time);
-                        (void)ha_webhooks_update_cache(&upd);
-                    }
                 }
             }
         }
@@ -2686,9 +2798,6 @@ void autopid_init(char* id)
 
     
     xTaskCreate(autopid_task, "autopid_task", 5000, (void *)AF_INET, 5, NULL);
-    if(config_server_get_webhook_en())
-    {
-        xTaskCreate(autopid_webhook_task, "autopid_webhook_task", 6144, NULL, 4, NULL);
-    }
+    xTaskCreate(autopid_webhook_task, "autopid_webhook_task", 6144, NULL, 4, NULL);
 
 }

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WiCAN PRO v4.50p Full Recovery Guide</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #526078;
+      --blue: #2457a6;
+      --blue-soft: #eaf2ff;
+      --amber: #8a5200;
+      --amber-soft: #fff4d6;
+      --red: #9f1d20;
+      --red-soft: #fff0f0;
+      --green: #17603a;
+      --green-soft: #eaf8f0;
+      --line: #d7dfeb;
+      --paper: #ffffff;
+      --background: #f3f6fa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--ink);
+      font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 32px auto;
+      padding: clamp(24px, 5vw, 56px);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 12px 35px rgba(37, 55, 84, 0.09);
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; }
+    h2 { margin-top: 42px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+    h3 { margin-top: 24px; }
+    p, li { max-width: 78ch; }
+    li + li { margin-top: 8px; }
+    a { color: var(--blue); }
+
+    .subtitle { margin: 0 0 28px; color: var(--muted); font-size: 1.1rem; }
+    .callout { margin: 22px 0; padding: 16px 18px; border-left: 5px solid; border-radius: 8px; }
+    .danger { border-color: var(--red); background: var(--red-soft); }
+    .warning { border-color: var(--amber); background: var(--amber-soft); }
+    .info { border-color: var(--blue); background: var(--blue-soft); }
+    .success { border-color: var(--green); background: var(--green-soft); }
+
+    code {
+      padding: 2px 6px;
+      border: 1px solid #d7e0ed;
+      border-radius: 5px;
+      background: #f6f8fb;
+      overflow-wrap: anywhere;
+    }
+
+    .file-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fafcff;
+    }
+
+    .file-card p { margin: 5px 0; }
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li::before { content: "☐"; margin-right: 10px; color: var(--blue); font-weight: 700; }
+    .settings { border-collapse: collapse; width: 100%; max-width: 620px; }
+    .settings th, .settings td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; }
+    .settings th { background: #f1f5fa; }
+
+    footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); }
+
+    @media print {
+      body { background: #fff; font-size: 11pt; }
+      main { width: 100%; margin: 0; padding: 0; border: 0; box-shadow: none; }
+      h2 { break-after: avoid; }
+      .callout, .file-card, table { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>WiCAN PRO v4.50p Full Recovery</h1>
+    <p class="subtitle">Complete ESPTool Web procedure for rebuilding the bootloader, 16 MB partition table, OTA metadata, application, and storage layout.</p>
+  </header>
+
+  <div class="callout danger">
+    <strong>Important:</strong> This is a complete recovery. It erases all existing WiCAN settings and rewrites the full 16 MB flash. Once erasing starts, the WiCAN will not boot normally until programming finishes successfully.
+  </div>
+
+  <h2>Before starting</h2>
+  <ul>
+    <li>Use a Windows computer with a current version of Google Chrome or Microsoft Edge. Safari does not support ESPTool Web.</li>
+    <li>Use a known-good USB-C <strong>data</strong> cable, not a charging-only cable.</li>
+    <li>Keep the vehicle parked throughout the recovery.</li>
+    <li>Make sure the vehicle battery is healthy and the computer will not sleep.</li>
+    <li>Close serial monitors or terminal programs that could be using the WiCAN COM ports.</li>
+  </ul>
+
+  <div class="file-card">
+    <p><strong>Recovery file:</strong> <a href="dist/wican-fw_obd_pro_v450p_full-recovery_16MB.bin">wican-fw_obd_pro_v450p_full-recovery_16MB.bin</a></p>
+    <p><strong>Expected size:</strong> 16,777,216 bytes</p>
+    <p><strong>SHA-256:</strong><br><code>D69B5C024229431FFC6B9716331B1B36F2A8B57629585CE0D2BCB47BC8D6C969</code></p>
+  </div>
+
+  <h2>1. Power the WiCAN PRO</h2>
+  <ol>
+    <li>Turn the vehicle completely off.</li>
+    <li>Plug the WiCAN PRO firmly into the vehicle's OBD-II port.</li>
+    <li>Confirm that the WiCAN LEDs turn on.</li>
+    <li>Leave the WiCAN connected to the OBD port throughout the entire recovery.</li>
+  </ol>
+  <div class="callout warning">
+    The USB-C connection alone cannot reliably power the WiCAN PRO. The OBD connection supplies operating power. If the vehicle switches off its OBD port, use accessory mode without starting the engine. Do not proceed with a weak vehicle battery.
+  </div>
+
+  <h2>2. Connect USB and identify Serial-A</h2>
+  <ol>
+    <li>Connect the USB-C data cable to the WiCAN PRO and then to the computer. Avoid a USB hub if possible.</li>
+    <li>Right-click the Windows Start button and select <strong>Device Manager</strong>.</li>
+    <li>Expand <strong>Ports (COM &amp; LPT)</strong>.</li>
+    <li>Look for the two new CH342/CH343 serial ports created by the WiCAN PRO.</li>
+    <li>Identify the port labeled <strong>Serial-A</strong> and note its COM number, such as <code>COM5</code>.</li>
+  </ol>
+
+  <h3>If no new COM ports appear</h3>
+  <ul>
+    <li>Unplug and reconnect the USB cable.</li>
+    <li>Try another USB data cable or computer USB port.</li>
+    <li>Install the Windows CH342/CH343 driver and reconnect the device.</li>
+    <li>Confirm that no other program has the serial port open.</li>
+  </ul>
+
+  <h2>3. Connect ESPTool Web</h2>
+  <ol>
+    <li>In Chrome or Edge, open <a href="https://espressif.github.io/esptool-js/">https://espressif.github.io/esptool-js/</a>.</li>
+    <li>Set <strong>Baudrate</strong> to <code>115200</code>. This is slower but safer for recovery.</li>
+    <li>Click <strong>Connect</strong>.</li>
+    <li>In the browser's serial-port dialog, select the COM port corresponding to <strong>Serial-A</strong>.</li>
+    <li>Click <strong>Connect</strong> in the dialog.</li>
+    <li>Watch the console and confirm that it identifies an <strong>ESP32-S3</strong>.</li>
+  </ol>
+  <div class="callout warning">
+    Do not continue if ESPTool reports a different chip. If both COM ports look identical, try one; a failed connection before erasing does not damage the device. Disconnect and try the other port.
+  </div>
+
+  <h2>4. Erase the damaged flash</h2>
+  <ol>
+    <li>Confirm again that ESPTool is connected to an ESP32-S3 through Serial-A.</li>
+    <li>Click <strong>Erase Flash</strong> or <strong>Erase</strong>.</li>
+    <li>Confirm the operation if prompted.</li>
+    <li>Do not touch the OBD connector, USB cable, browser, or computer while erasing.</li>
+    <li>Wait for the console to report that the erase completed successfully.</li>
+  </ol>
+  <div class="callout danger">
+    After the erase succeeds, do not remove power. Complete the programming step before disconnecting the WiCAN.
+  </div>
+
+  <h3>If erase fails</h3>
+  <p>If you see <code>Failed to connect</code>, <code>Timed out</code>, <code>Serial port disconnected</code>, or <code>Invalid head of packet</code>, reconnect to Serial-A and repeat the erase. Do not continue to programming until erase completes successfully.</p>
+
+  <h2>5. Add the recovery image</h2>
+  <ol>
+    <li>In the <strong>Program</strong> section, click <strong>Choose File</strong> or <strong>Add File</strong>.</li>
+    <li>Select <code>wican-fw_obd_pro_v450p_full-recovery_16MB.bin</code>.</li>
+    <li>In the address or offset field next to the file, enter <code>0x0000</code>.</li>
+    <li>Use only this one merged recovery file. Do not also add the four individual firmware files.</li>
+  </ol>
+
+  <table class="settings">
+    <thead><tr><th>Setting</th><th>Required value</th></tr></thead>
+    <tbody>
+      <tr><td>Filename</td><td><code>wican-fw_obd_pro_v450p_full-recovery_16MB.bin</code></td></tr>
+      <tr><td>Address</td><td><code>0x0000</code></td></tr>
+      <tr><td>Flash mode, if shown</td><td><code>DIO</code></td></tr>
+      <tr><td>Flash frequency, if shown</td><td><code>80 MHz</code></td></tr>
+      <tr><td>Flash size, if shown</td><td><code>16 MB</code></td></tr>
+      <tr><td>Baudrate</td><td><code>115200</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. Program the firmware</h2>
+  <ol>
+    <li>Recheck the filename and confirm that the address is exactly <code>0x0000</code>.</li>
+    <li>Click <strong>Program</strong>.</li>
+    <li>Leave the device and computer undisturbed. A full 16 MB write at 115200 baud can take a considerable amount of time.</li>
+    <li>Do not unplug anything when the progress first reaches 100%.</li>
+    <li>Wait for a definite completion message such as <code>Finished</code>, <code>Programming complete</code>, <code>Hash verified</code>, or <code>Hard resetting via RTS pin</code>.</li>
+  </ol>
+
+  <h2>7. Disconnect and restart</h2>
+  <ol>
+    <li>After programming reports success, click ESPTool's <strong>Disconnect</strong> button if one is shown.</li>
+    <li>Wait approximately five seconds.</li>
+    <li>Unplug the USB-C cable from the WiCAN PRO.</li>
+    <li>Unplug the WiCAN PRO from the OBD port.</li>
+    <li>Wait at least 10 seconds.</li>
+    <li>Reconnect the WiCAN PRO to the OBD port.</li>
+    <li>Allow 30–60 seconds for the first startup.</li>
+  </ol>
+
+  <h2>8. Confirm the recovery</h2>
+  <ol>
+    <li>Look for a Wi-Fi network named approximately <code>WiCAN_xxxxxxxxxx</code>.</li>
+    <li>Connect using the factory password <code>@meatpi#</code>.</li>
+    <li>Open <a href="http://192.168.0.10/">http://192.168.0.10/</a>.</li>
+    <li>Open the WiCAN <strong>About</strong> tab.</li>
+    <li>Confirm that the firmware version reports <strong>v4.50p</strong>.</li>
+  </ol>
+
+  <div class="callout info">
+    Because the entire flash was erased, Wi-Fi, vehicle protocol, Home Assistant, webhooks, and power-saving settings must be configured again.
+  </div>
+
+  <h2>Final checklist</h2>
+  <ul class="checklist">
+    <li>WiCAN remained powered through OBD during erase and programming.</li>
+    <li>Serial-A was selected.</li>
+    <li>ESPTool identified an ESP32-S3.</li>
+    <li>Erase completed successfully.</li>
+    <li>The 16 MB merged recovery file was programmed at <code>0x0000</code>.</li>
+    <li>ESPTool explicitly reported successful completion.</li>
+    <li>USB was disconnected before cycling OBD power.</li>
+    <li>The About page reports v4.50p.</li>
+  </ul>
+
+  <footer>
+    <p>Recovery image layout: bootloader at 0x0000, partition table at 0x8000, OTA metadata at 0xD000, and v4.50p application at 0x10000.</p>
+  </footer>
+</main>
+</body>
+</html>

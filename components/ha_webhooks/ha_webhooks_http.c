@@ -21,9 +21,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <errno.h>
+#include <time.h>
 #include <cJSON.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
+#include <esp_err.h>
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
 
 static const char *TAG = "HA_WEBHOOK_HTTP";
 
@@ -38,6 +43,216 @@ static bool url_is_http(const char *url)
     if (!url)
         return false;
     return strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0;
+}
+
+static void webhook_format_utc(char out[32])
+{
+    if (!out)
+        return;
+
+    time_t now = time(NULL);
+    struct tm t;
+    memset(&t, 0, sizeof(t));
+
+    if (now <= 0)
+    {
+        strlcpy(out, "1970-01-01T00:00:00Z", 32);
+        return;
+    }
+
+    gmtime_r(&now, &t);
+    strftime(out, 32, "%Y-%m-%dT%H:%M:%SZ", &t);
+}
+
+static void webhook_sanitize_snippet(char *s)
+{
+    if (!s)
+        return;
+    for (size_t i = 0; s[i]; i++)
+    {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '\r' || c == '\n' || c == '\t' || c < 32 || c > 126)
+            s[i] = ' ';
+    }
+}
+
+static bool webhook_parse_http_url(const char *url, char *host, size_t host_len, int *out_port, char *path, size_t path_len)
+{
+    if (!url || !host || !out_port || !path)
+        return false;
+
+    if (strncasecmp(url, "http://", 7) != 0)
+        return false;
+
+    const char *p = url + 7;
+    const char *host_end = p;
+    while (*host_end && *host_end != '/' && *host_end != ':')
+        host_end++;
+
+    size_t hlen = (size_t)(host_end - p);
+    if (hlen == 0 || hlen >= host_len)
+        return false;
+    memcpy(host, p, hlen);
+    host[hlen] = '\0';
+
+    int port = 80;
+    const char *after_host = host_end;
+    if (*after_host == ':')
+    {
+        after_host++;
+        port = 0;
+        while (*after_host && isdigit((unsigned char)*after_host))
+        {
+            port = (port * 10) + (*after_host - '0');
+            after_host++;
+        }
+        if (port <= 0 || port > 65535)
+            return false;
+    }
+
+    if (*after_host == '\0')
+        strlcpy(path, "/", path_len);
+    else if (*after_host == '/')
+        strlcpy(path, after_host, path_len);
+    else
+        return false;
+
+    *out_port = port;
+    return true;
+}
+
+static esp_err_t webhook_post_json(const char *url, const char *body, size_t body_len, int timeout_ms,
+                                   int *out_status, char *out_snippet, size_t out_snippet_len)
+{
+    if (!url || !body)
+        return ESP_ERR_INVALID_ARG;
+
+    if (out_status)
+        *out_status = -1;
+    if (out_snippet && out_snippet_len)
+        out_snippet[0] = '\0';
+
+    char host[96] = {0};
+    char path[192] = {0};
+    int port = 80;
+    if (!webhook_parse_http_url(url, host, sizeof(host), &port, path, sizeof(path)))
+        return ESP_ERR_INVALID_ARG;
+
+    char port_str[8];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo *res = NULL;
+    int gai = getaddrinfo(host, port_str, &hints, &res);
+    if (gai != 0 || !res)
+    {
+        if (out_snippet && out_snippet_len)
+            snprintf(out_snippet, out_snippet_len, "getaddrinfo failed gai=%d", gai);
+        return ESP_FAIL;
+    }
+
+    int sock = -1;
+    int last_errno = 0;
+    for (struct addrinfo *ai = res; ai; ai = ai->ai_next)
+    {
+        sock = (int)socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sock < 0)
+            continue;
+
+        struct timeval tv;
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+        if (connect(sock, ai->ai_addr, (socklen_t)ai->ai_addrlen) == 0)
+            break;
+
+        last_errno = errno;
+        close(sock);
+        sock = -1;
+    }
+    freeaddrinfo(res);
+
+    if (sock < 0)
+    {
+        if (out_snippet && out_snippet_len)
+            snprintf(out_snippet, out_snippet_len, "connect failed errno=%d", last_errno);
+        return ESP_FAIL;
+    }
+
+    const char *fmt =
+        "POST %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/json\r\n"
+        "Connection: close\r\n"
+        "Content-Length: %u\r\n"
+        "\r\n";
+
+    int hdr_len = snprintf(NULL, 0, fmt, path, host, (unsigned)body_len);
+    if (hdr_len <= 0)
+    {
+        close(sock);
+        return ESP_FAIL;
+    }
+
+    size_t req_len = (size_t)hdr_len + body_len;
+    char *req_buf = (char *)malloc(req_len + 1);
+    if (!req_buf)
+    {
+        close(sock);
+        return ESP_ERR_NO_MEM;
+    }
+
+    snprintf(req_buf, (size_t)hdr_len + 1, fmt, path, host, (unsigned)body_len);
+    memcpy(req_buf + hdr_len, body, body_len);
+    req_buf[req_len] = '\0';
+
+    size_t sent = 0;
+    while (sent < req_len)
+    {
+        int n = (int)send(sock, req_buf + sent, (int)(req_len - sent), 0);
+        if (n <= 0)
+        {
+            free(req_buf);
+            close(sock);
+            return ESP_FAIL;
+        }
+        sent += (size_t)n;
+    }
+    free(req_buf);
+
+    char resp[512];
+    int r = (int)recv(sock, resp, sizeof(resp) - 1, 0);
+    close(sock);
+    if (r <= 0)
+        return ESP_FAIL;
+    resp[r] = '\0';
+
+    int status = -1;
+    const char *sp = strstr(resp, "HTTP/");
+    if (sp)
+    {
+        const char *code = strchr(sp, ' ');
+        if (code)
+            status = atoi(code + 1);
+    }
+    if (out_status)
+        *out_status = status;
+
+    if (out_snippet && out_snippet_len > 0)
+    {
+        const char *body_start = strstr(resp, "\r\n\r\n");
+        body_start = body_start ? (body_start + 4) : resp;
+        strlcpy(out_snippet, body_start, out_snippet_len);
+        webhook_sanitize_snippet(out_snippet);
+    }
+
+    return ESP_OK;
 }
 
 /**
@@ -262,6 +477,86 @@ static esp_err_t webhook_get_handler(httpd_req_t *req)
     return send_json(req, resp, 200);
 }
 
+static esp_err_t webhook_test_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "POST /api/webhook/test");
+
+    ha_webhook_config_t cfg = {0};
+    esp_err_t r = ha_webhooks_get_config(&cfg);
+    if (r != ESP_OK || cfg.url[0] == '\0')
+    {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "webhook not configured");
+    }
+
+    if (!cfg.enabled)
+    {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "webhook disabled");
+    }
+
+    if (strncasecmp(cfg.url, "http://", 7) != 0)
+    {
+        ha_webhook_config_t upd = cfg;
+        strlcpy(upd.status, "failed", sizeof(upd.status));
+        strlcpy(upd.last_error, "https not supported: use http://", sizeof(upd.last_error));
+        webhook_format_utc(upd.last_error_time);
+        upd.fail_count++;
+        (void)ha_webhooks_update_cache(&upd);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "https not supported");
+    }
+
+    char body[192];
+    char now[32];
+    webhook_format_utc(now);
+    snprintf(body, sizeof(body),
+             "{\"source\":\"wican\",\"event\":\"webhook_test\",\"timestamp\":\"%s\"}",
+             now);
+
+    int http_status = -1;
+    char snippet[96] = {0};
+    esp_err_t post_err = webhook_post_json(cfg.url, body, strlen(body), 5000, &http_status, snippet, sizeof(snippet));
+
+    ha_webhook_config_t upd = cfg;
+    bool ok = (post_err == ESP_OK && http_status >= 200 && http_status < 300);
+    if (ok)
+    {
+        upd.success_count++;
+        upd.retries = 0;
+        strlcpy(upd.status, "ok", sizeof(upd.status));
+        webhook_format_utc(upd.last_post);
+        upd.last_error[0] = '\0';
+        upd.last_error_time[0] = '\0';
+    }
+    else
+    {
+        upd.fail_count++;
+        upd.retries++;
+        strlcpy(upd.status, "failed", sizeof(upd.status));
+        webhook_format_utc(upd.last_error_time);
+        if (http_status > 0)
+            snprintf(upd.last_error, sizeof(upd.last_error), "HTTP %d %s", http_status, snippet);
+        else if (snippet[0])
+            strlcpy(upd.last_error, snippet, sizeof(upd.last_error));
+        else
+            snprintf(upd.last_error, sizeof(upd.last_error), "%s", esp_err_to_name(post_err));
+    }
+    (void)ha_webhooks_update_cache(&upd);
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddBoolToObject(resp, "ok", ok);
+    cJSON_AddNumberToObject(resp, "http_status", http_status);
+    cJSON_AddStringToObject(resp, "url", upd.url);
+    cJSON_AddBoolToObject(resp, "enabled", upd.enabled);
+    cJSON_AddNumberToObject(resp, "interval", upd.interval);
+    cJSON_AddNumberToObject(resp, "success_count", upd.success_count);
+    cJSON_AddNumberToObject(resp, "fail_count", upd.fail_count);
+    cJSON_AddStringToObject(resp, "status", upd.status);
+    cJSON_AddStringToObject(resp, "last_post", upd.last_post[0] ? upd.last_post : "");
+    cJSON_AddStringToObject(resp, "last_error_time", upd.last_error_time[0] ? upd.last_error_time : "");
+    cJSON_AddStringToObject(resp, "last_error", upd.last_error[0] ? upd.last_error : "");
+
+    return send_json(req, resp, ok ? 200 : 200);
+}
+
 /**
  * @brief Handle DELETE requests to remove webhook configuration
  *
@@ -328,7 +623,14 @@ static esp_err_t webhook_delete_handler(httpd_req_t *req)
  */
 static esp_err_t router(httpd_req_t *req)
 {
-    const char *uri = req->uri; // expect /api/webhook
+    const char *uri = req->uri;
+
+    if (strcmp(uri, "/api/webhook/test") == 0)
+    {
+        if (req->method == HTTP_POST)
+            return webhook_test_handler(req);
+        return httpd_resp_send_err(req, HTTPD_405_METHOD_NOT_ALLOWED, "method");
+    }
 
     if (strcmp(uri, "/api/webhook") != 0)
     {
@@ -354,11 +656,12 @@ esp_err_t ha_webhooks_register_handlers(httpd_handle_t server)
     static const httpd_uri_t get_u = {.uri = "/api/webhook", .method = HTTP_GET, .handler = router};
     static const httpd_uri_t post_u = {.uri = "/api/webhook", .method = HTTP_POST, .handler = router};
     static const httpd_uri_t del_u = {.uri = "/api/webhook", .method = HTTP_DELETE, .handler = router};
+    static const httpd_uri_t test_u = {.uri = "/api/webhook/test", .method = HTTP_POST, .handler = router};
 
-    const httpd_uri_t *arr[] = {&get_u, &post_u, &del_u};
-    const char *method_names[] = {"GET", "POST", "DELETE"};
+    const httpd_uri_t *arr[] = {&get_u, &post_u, &del_u, &test_u};
+    const char *method_names[] = {"GET", "POST", "DELETE", "POST test"};
 
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < 4; ++i)
     {
         esp_err_t r = httpd_register_uri_handler(server, arr[i]);
         if (r != ESP_OK && r != ESP_ERR_HTTPD_HANDLER_EXISTS)
